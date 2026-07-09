@@ -1,7 +1,7 @@
 import os
 import sqlite3
 
-from werkzeug.security import generate_password_hash
+from werkzeug.security import generate_password_hash, check_password_hash
 
 # Anchor to the project root (one level up from this file) so the DB
 # always lands in the same place regardless of the process's cwd.
@@ -90,6 +90,15 @@ def get_user_by_email(email):
         "SELECT * FROM users WHERE email = ?", (email,)
     ).fetchone()
     conn.close()
+    return user
+
+
+def verify_user(email, password):
+    user = get_user_by_email(email)
+    if user is None:
+        return None
+    if not check_password_hash(user["password_hash"], password):
+        return None
     return user
 
 
