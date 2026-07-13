@@ -1,5 +1,6 @@
 import os
 import sqlite3
+from datetime import datetime
 
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -113,3 +114,82 @@ def create_user(name, email, password):
     user_id = cursor.lastrowid
     conn.close()
     return user_id
+
+
+def get_recent_transactions(user_id, limit=10):
+    """Return list of dicts (date, description, category, amount), newest-first."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT date, description, category, amount FROM expenses "
+        "WHERE user_id = ? ORDER BY date DESC, id DESC LIMIT ?",
+        (user_id, limit),
+    ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def get_user_by_id(user_id):
+    """Return dict with name, email, member_since, initials, or None if not found."""
+    conn = get_db()
+    row = conn.execute(
+        "SELECT name, email, created_at FROM users WHERE id = ?", (user_id,)
+    ).fetchone()
+    conn.close()
+    if row is None:
+        return None
+    name = row["name"]
+    dt = datetime.strptime(row["created_at"], "%Y-%m-%d %H:%M:%S")
+    words = name.split()
+    initials = "".join(w[0] for w in words[:2]).upper() if words else ""
+    return {
+        "name": name,
+        "email": row["email"],
+        "member_since": dt.strftime("%B %Y"),
+        "initials": initials,
+    }
+
+
+def get_summary_stats(user_id):
+    """Return dict with total_spent (float), transaction_count (int), top_category (str)."""
+    conn = get_db()
+    total_row = conn.execute(
+        "SELECT COALESCE(SUM(amount), 0) AS total, COUNT(*) AS cnt "
+        "FROM expenses WHERE user_id = ?",
+        (user_id,),
+    ).fetchone()
+    top_row = conn.execute(
+        "SELECT category, SUM(amount) AS cat_total FROM expenses "
+        "WHERE user_id = ? GROUP BY category ORDER BY cat_total DESC LIMIT 1",
+        (user_id,),
+    ).fetchone()
+    conn.close()
+    return {
+        "total_spent": total_row["total"],
+        "transaction_count": total_row["cnt"],
+        "top_category": top_row["category"] if top_row else "-",
+    }
+
+
+def get_category_breakdown(user_id):
+    """Return list of dicts (name, total, bar_pct), ordered by total desc.
+    bar_pct is bucketed to the nearest multiple of 5 in [0, 100]."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT category, SUM(amount) AS cat_total FROM expenses "
+        "WHERE user_id = ? GROUP BY category ORDER BY cat_total DESC",
+        (user_id,),
+    ).fetchall()
+    conn.close()
+    if not rows:
+        return []
+    grand_total = sum(r["cat_total"] for r in rows)
+    result = []
+    for r in rows:
+        pct = (r["cat_total"] / grand_total) * 100 if grand_total else 0
+        bar_pct = max(0, min(100, round(pct / 5) * 5))
+        result.append({
+            "name": r["category"],
+            "total": r["cat_total"],
+            "bar_pct": bar_pct,
+        })
+    return result
