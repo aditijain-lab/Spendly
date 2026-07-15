@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from flask import Flask, render_template, request, redirect, url_for, session, abort
 
 from database.db import (
@@ -24,6 +26,21 @@ with app.app_context():
 @app.template_filter("inr")
 def format_inr(value):
     return f"₹{value:,.2f}"
+
+
+def _parse_date_filter(raw_start, raw_end):
+    """Return (start_date, end_date) as 'YYYY-MM-DD' strings, or (None, None) if the
+    filter is missing, incomplete, malformed, or start > end."""
+    if not raw_start or not raw_end:
+        return None, None
+    try:
+        start_dt = datetime.strptime(raw_start, "%Y-%m-%d")
+        end_dt = datetime.strptime(raw_end, "%Y-%m-%d")
+    except ValueError:
+        return None, None
+    if start_dt > end_dt:
+        return None, None
+    return raw_start, raw_end
 
 
 # ------------------------------------------------------------------ #
@@ -119,12 +136,19 @@ def profile():
     if user is None:
         abort(404)
 
+    start_date, end_date = _parse_date_filter(
+        request.args.get("start_date"), request.args.get("end_date")
+    )
+
     return render_template(
         "profile.html",
         user=user,
-        stats=get_summary_stats(user_id),
-        transactions=get_recent_transactions(user_id),
-        categories=get_category_breakdown(user_id),
+        stats=get_summary_stats(user_id, start_date, end_date),
+        transactions=get_recent_transactions(user_id, start_date=start_date, end_date=end_date),
+        categories=get_category_breakdown(user_id, start_date, end_date),
+        start_date=start_date,
+        end_date=end_date,
+        filter_active=bool(start_date and end_date),
     )
 
 
