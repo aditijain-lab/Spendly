@@ -1,0 +1,6 @@
+/* Add Expense page — reuses .auth-section/.auth-container/.auth-card/.form-group/
+   .form-input/.btn-submit/.auth-error from style.css. */
+
+.auth-card select.form-input {
+    cursor: pointer;
+}

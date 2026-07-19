@@ -116,6 +116,20 @@ def create_user(name, email, password):
     return user_id
 
 
+def create_expense(user_id, amount, category, date, description):
+    """Insert a new expense row for user_id and return its new id."""
+    conn = get_db()
+    cursor = conn.execute(
+        "INSERT INTO expenses (user_id, amount, category, date, description) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (user_id, amount, category, date, description),
+    )
+    conn.commit()
+    expense_id = cursor.lastrowid
+    conn.close()
+    return expense_id
+
+
 def _date_range_clause(start_date, end_date):
     """Return (sql_fragment, params_list). Empty if either date is missing."""
     if start_date and end_date:
