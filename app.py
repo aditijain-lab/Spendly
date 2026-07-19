@@ -13,10 +13,14 @@ from database.db import (
     get_summary_stats,
     get_recent_transactions,
     get_category_breakdown,
+    create_expense,
 )
 
 app = Flask(__name__)
 app.secret_key = "dev-secret-key-change-in-production"
+
+ALLOWED_CATEGORIES = ["Food", "Transport", "Bills", "Health", "Entertainment", "Shopping", "Other"]
+MAX_EXPENSE_AMOUNT = 1_000_000
 
 with app.app_context():
     init_db()
@@ -41,6 +45,29 @@ def _parse_date_filter(raw_start, raw_end):
     if start_dt > end_dt:
         return None, None
     return raw_start, raw_end
+
+
+def _validate_expense_form(amount_raw, category, date):
+    """Return (amount, error). amount is a float when valid, otherwise None
+    and error holds a user-facing validation message."""
+    try:
+        amount = float(amount_raw)
+    except ValueError:
+        return None, "Enter a valid amount."
+    if amount <= 0:
+        return None, "Amount must be greater than zero."
+    if amount > MAX_EXPENSE_AMOUNT:
+        return None, f"Amount must be less than ₹{MAX_EXPENSE_AMOUNT:,.0f}."
+
+    if category not in ALLOWED_CATEGORIES:
+        return None, "Select a valid category."
+
+    try:
+        datetime.strptime(date, "%Y-%m-%d")
+    except ValueError:
+        return None, "Enter a valid date."
+
+    return amount, None
 
 
 # ------------------------------------------------------------------ #
@@ -152,13 +179,51 @@ def profile():
     )
 
 
+@app.route("/analytics")
+def analytics():
+    if not session.get("user_id"):
+        return redirect(url_for("login"))
+    return render_template("analytics.html")
+
+
 # ------------------------------------------------------------------ #
 # Placeholder routes — students will implement these                  #
 # ------------------------------------------------------------------ #
 
-@app.route("/expenses/add")
+@app.route("/expenses/add", methods=["GET", "POST"])
 def add_expense():
-    return "Add expense — coming in Step 7"
+    if not session.get("user_id"):
+        return redirect(url_for("login"))
+
+    if request.method == "GET":
+        return render_template(
+            "add_expense.html",
+            categories=ALLOWED_CATEGORIES,
+            date=datetime.now().strftime("%Y-%m-%d"),
+        )
+
+    amount_raw = request.form.get("amount", "").strip()
+    category = request.form.get("category", "").strip()
+    date = request.form.get("date", "").strip()
+    description = request.form.get("description", "").strip()
+
+    def rerender(error):
+        return render_template(
+            "add_expense.html",
+            categories=ALLOWED_CATEGORIES,
+            error=error,
+            amount=amount_raw,
+            category=category,
+            date=date,
+            description=description,
+        )
+
+    amount, error = _validate_expense_form(amount_raw, category, date)
+    if error:
+        return rerender(error)
+
+    create_expense(session["user_id"], amount, category, date, description)
+    return redirect(url_for("profile"))
 
 
 @app.route("/expenses/<int:id>/edit")
